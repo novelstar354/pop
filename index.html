@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Popタイピング — Pop Typing</title>
+<style>
+  :root{
+    --bg1: #0b1220; --bg2:#061023; --card:#0f1724; --accent:#ff7ab6; --accent2:#4dd0e1; --muted:#98a8bf;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter, "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, Arial;}
+  body{
+    background: linear-gradient(180deg,var(--bg1),var(--bg2));
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+  }
+  .wrap{
+    width:100%;
+    max-width:1100px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;
+    box-shadow: 0 12px 40px rgba(2,8,23,0.7);
+    overflow:hidden;
+    display:grid;
+    grid-template-columns: 1fr 320px;
+    gap:16px;
+    padding:16px;
+  }
+  header{
+    grid-column:1/-1;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+  }
+  header h1{margin:0;font-size:1.15rem;letter-spacing:0.6px}
+  header .sub{color:var(--muted);font-size:0.9rem}
+  .play-area{
+    background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.003));
+    border-radius:10px;
+    position:relative;
+    min-height:520px;
+    overflow:hidden;
+  }
+  .hud{
+    display:flex;
+    gap:10px;
+    padding:10px 0;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .stats{display:flex;gap:8px;align-items:center}
+  .stat{background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:8px;min-width:88px;text-align:center}
+  .big{font-weight:800;font-size:1.1rem}
+  .muted{color:var(--muted);font-size:0.85rem}
+
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  button, select { background:transparent;border:1px solid rgba(255,255,255,0.06);color:white;padding:8px 10px;border-radius:8px;cursor:pointer }
+  button.primary{border:1px solid rgba(255,122,182,0.6);background:linear-gradient(90deg, rgba(255,122,182,0.08), rgba(77,208,225,0.03))}
+  .right-panel{
+    padding:12px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.006), rgba(255,255,255,0.002));
+    border-radius:10px;
+  }
+  .center-hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;opacity:0.14;font-size:48px;font-weight:900;pointer-events:none;white-space:nowrap}
+  .input-row{display:flex;gap:8px;padding:10px 0;align-items:center}
+  input[type="text"]{
+    flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:white;font-size:1rem;
+  }
+  .bubble{
+    position:absolute;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:10px 14px;
+    border-radius:999px;
+    font-weight:700;
+    user-select:none;
+    cursor:pointer;
+    box-shadow: 0 8px 22px rgba(2,8,23,0.6), inset 0 -6px 12px rgba(255,255,255,0.02);
+    transition: transform 120ms ease, opacity 200ms linear;
+    white-space:nowrap;
+    will-change: transform, left, top;
+  }
+  .bubble.popped{transform:scale(1.2);opacity:0}
+  .footer-note{color:var(--muted);font-size:0.85rem;margin-top:8px}
+
+  .difficulty-row{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .highscore{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;margin-top:10px}
+
+  @media(max-width:980px){
+    .wrap{grid-template-columns:1fr; padding:12px}
+    .right-panel{order:2}
+  }
+
+  /* simple animation for bubbles drifting */
+  @keyframes floaty {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+    100% { transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-label="Popタイピングゲーム">
+    <header>
+      <div>
+        <h1>Popタイピング 🎈</h1>
+        <div class="sub">浮かぶバブルをタイピングで弾け！クリックでもポップ。</div>
+      </div>
+      <div class="controls">
+        <button id="startBtn" class="primary">スタート</button>
+        <button id="pauseBtn">一時停止</button>
+        <button id="resetBtn">リセット</button>
+        <select id="timeSelect" title="プレイ時間">
+          <option value="30">30秒</option>
+          <option value="60" selected>60秒</option>
+          <option value="120">120秒</option>
+        </select>
+        <select id="diffSelect" title="難易度">
+          <option value="easy">やさしい</option>
+          <option value="normal" selected>ふつう</option>
+          <option value="hard">むずかしい</option>
+        </select>
+      </div>
+    </header>
+
+    <main class="play-area" id="playArea" tabindex="0" aria-label="ゲーム画面">
+      <div class="center-hint">POP TYPING</div>
+      <!-- HUD -->
+      <div class="hud" style="position:absolute;left:12px;right:12px;top:10px;z-index:40">
+        <div class="stats">
+          <div class="stat"><div class="muted">時間</div><div id="timeLeft" class="big">--</div></div>
+          <div class="stat"><div class="muted">スコア</div><div id="score" class="big">0</div></div>
+          <div class="stat"><div class="muted">ミス</div><div id="miss" class="big">0</div></div>
+          <div class="stat"><div class="muted">コンボ</div><div id="combo" class="big">0</div></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="muted">Escでリセット • クリックでポップ</div>
+        </div>
+      </div>
+
+      <!-- dynamic bubbles generated here -->
+      <div id="bubblesLayer" style="position:absolute;inset:0;z-index:10;pointer-events:auto"></div>
+
+      <!-- input & controls at bottom -->
+      <div style="position:absolute;left:12px;right:12px;bottom:12px;z-index:45">
+        <div class="input-row">
+          <input id="typeInput" placeholder="ここにタイプして Space / Enter で弾く" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <button id="popBtn">ポップ</button>
+        </div>
+        <div class="footer-note">ヒント：素早く正確に入力するとコンボと高スコア！</div>
+      </div>
+    </main>
+
+    <aside class="right-panel" aria-label="サイドバー">
+      <div>
+        <div style="font-weight:900;font-size:1.05rem">設定・情報</div>
+        <div class="difficulty-row">
+          <div class="muted">単語セット</div>
+          <select id="wordSet">
+            <option value="common" selected>よく使う英単語</option>
+            <option value="numbers">数字</option>
+            <option value="japanese">短い日本語（ローマ字）</option>
+          </select>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted">説明</div>
+          <div style="margin-top:6px;color:var(--muted)">画面に現れる単語（バブル）をタイプしてポップします。正しくポップするとスコア + コンボ増加、ミスはリセットや減点になります。</div>
+        </div>
+
+        <div class="highscore">
+          <div class="muted">ハイスコア</div>
+          <div id="highscoreDisplay" style="font-weight:800;font-size:1.1rem">--</div>
+          <div class="muted" style="margin-top:6px">保存: localStorage</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted">操作</div>
+          <ol style="color:var(--muted);margin-top:6px;padding-left:18px">
+            <li>テキスト入力 → Space/Enter → 単語が合っていればポップ</li>
+            <li>バブルをクリックして直接ポップ（即座に得点）</li>
+            <li>Escでリセット</li>
+          </ol>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted">最終スコア履歴（最新5）</div>
+          <ul id="scoreHistory" style="margin-top:6px;color:var(--muted);padding-left:18px"></ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+(() => {
+  // --- CONFIG ---
+  const playArea = document.getElementById('playArea');
+  const bubblesLayer = document.getElementById('bubblesLayer');
+  const typeInput = document.getElementById('typeInput');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const popBtn = document.getElementById('popBtn');
+  const timeLeftEl = document.getElementById('timeLeft');
+  const scoreEl = document.getElementById('score');
+  const missEl = document.getElementById('miss');
+  const comboEl = document.getElementById('combo');
+  const timeSelect = document.getElementById('timeSelect');
+  const diffSelect = document.getElementById('diffSelect');
+  const wordSetSelect = document.getElementById('wordSet');
+  const highscoreDisplay = document.getElementById('highscoreDisplay');
+  const scoreHistoryEl = document.getElementById('scoreHistory');
+
+  // word pools
+  const WORD_POOLS = {
+    common: ["cat","dog","apple","sun","moon","tree","book","code","star","blue","hello","world","game","keyboard","music","mouse","cloud","river","mountain","light"],
+    numbers: Array.from({length:50}, (_,i)=>String(i+1)),
+    japanese: ["sakura","kumo","yama","mizu","kaze","hikari","kaze","umi","kawa","hoshi","yume","koi","hana","tori","inu"]
+  };
+
+  // state
+  let bubbles = new Map(); // id -> bubble object
+  let nextId = 1;
+  let running = false;
+  let paused = false;
+  let spawnInterval = null;
+  let gameTimer = null;
+  let timeLimit = parseInt(timeSelect.value,10);
+  let timeLeft = timeLimit;
+  let score = 0;
+  let miss = 0;
+  let combo = 0;
+  let highscore = parseInt(localStorage.getItem('pop_typing_highscore')||'0',10) || 0;
+  highscoreDisplay.textContent = highscore || 0;
+  let history = JSON.parse(localStorage.getItem('pop_typing_history')||'[]');
+
+  // difficulty params
+  function getParams(){
+    const diff = diffSelect.value;
+    if(diff === 'easy') return {spawnRate:1200, maxBubbles:6, speedRange:[20,40], wordLength: [3,6]};
+    if(diff === 'hard') return {spawnRate:600, maxBubbles:14, speedRange:[60,120], wordLength: [4,12]};
+    return {spawnRate:900, maxBubbles:10, speedRange:[35,70], wordLength: [3,8]};
+  }
+
+  // audio: simple pop & miss via WebAudio
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = AudioCtx ? new AudioCtx() : null;
+  function playPop(){
+    if(!audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(600, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.12);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.3, audioCtx.currentTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.18);
+  }
+  function playMiss(){
+    if(!audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(160, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.2);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18, audioCtx.currentTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.22);
+  }
+
+  // utility
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function choose(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+  // spawn bubble
+  function spawnBubble(){
+    const params = getParams();
+    if(bubbles.size >= params.maxBubbles) return;
+
+    const id = nextId++;
+    const pool = WORD_POOLS[wordSetSelect.value] || WORD_POOLS.common;
+    let word = choose(pool);
+    // maybe modify word length for difficulty
+    // compute size
+    const size = Math.max(64, Math.min(140, 20 + word.length * 12));
+    const color = `hsl(${Math.floor(rand(160,330))}deg ${Math.floor(rand(60,90))}% ${Math.floor(rand(45,65))}%)`;
+    // position: random within area with margins
+    const areaRect = playArea.getBoundingClientRect();
+    const margin = 40;
+    const x = rand(margin, areaRect.width - margin - size);
+    const y = rand(areaRect.height + 20, areaRect.height + 120); // spawn below and float up
+    const speed = rand(params.speedRange[0], params.speedRange[1]); // pixels per second upward
+    const lifetime = rand(8, 18); // seconds until off-screen if not popped
+
+    // DOM element
+    const el = document.createElement('div');
+    el.className = 'bubble';
+    el.textContent = word;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.minWidth = size + 'px';
+    el.style.height = size + 'px';
+    el.style.lineHeight = size + 'px';
+    el.style.fontSize = Math.max(12, Math.min(22, word.length*3 + 8)) + 'px';
+    el.style.background = `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.12), transparent 20%), ${color}`;
+    el.style.color = '#031018';
+    el.style.border = '1px solid rgba(255,255,255,0.06)';
+    el.style.animation = `floaty ${rand(4,7)}s ease-in-out infinite`;
+    el.dataset.id = id;
+
+    // click handler -> pop
+    el.addEventListener('click', (ev)=> {
+      popBubble(id, true);
+      ev.stopPropagation();
+    });
+
+    bubblesLayer.appendChild(el);
+    const createdAt = performance.now();
+    bubbles.set(id, {id, word, x, y, el, speed, createdAt, lifetime, popped:false});
+  }
+
+  // update bubble positions
+  function updateBubbles(dt){
+    const areaRect = playArea.getBoundingClientRect();
+    for(const [id, b] of bubbles.entries()){
+      if(b.popped) continue;
+      // move upward
+      b.y -= b.speed * (dt/1000);
+      b.el.style.top = b.y + 'px';
+      // small horizontal sway
+      b.x += Math.sin((performance.now()/1000) + b.id) * 0.2;
+      b.el.style.left = b.x + 'px';
+      // if entirely off top, count as miss and remove
+      if(b.y + 0 < -120){
+        removeBubble(id);
+        registerMiss();
+      } else {
+        // lifetime expiry
+        if((performance.now() - b.createdAt)/1000 > b.lifetime){
+          removeBubble(id);
+          registerMiss();
+        }
+      }
+    }
+  }
+
+  let lastFrame = performance.now();
+  function gameLoop(now){
+    if(!running || paused){
+      lastFrame = now;
+      requestAnimationFrame(gameLoop);
+      return;
+    }
+    const dt = now - lastFrame;
+    lastFrame = now;
+    updateBubbles(dt);
+    requestAnimationFrame(gameLoop);
+  }
+
+  // pop bubble by id; clicked indicates direct click (awarded bonus)
+  function popBubble(id, clicked=false){
+    const b = bubbles.get(id);
+    if(!b || b.popped) return false;
+    b.popped = true;
+    b.el.classList.add('popped');
+    // play pop sound
+    playPop();
+    // score calc: base points by word length + speed bonus + combo
+    const base = Math.max(5, b.word.length * 10);
+    const timeFactor = 1 + Math.max(0, (b.lifetime - ((performance.now()-b.createdAt)/1000))/b.lifetime);
+    const clickBonus = clicked ? 10 : 0;
+    combo++;
+    const points = Math.round((base * timeFactor) + (combo * 5) + clickBonus);
+    score += points;
+    scoreEl.textContent = score;
+    comboEl.textContent = combo;
+    // fade out then remove
+    setTimeout(()=> {
+      if(b.el && b.el.parentNode) b.el.parentNode.removeChild(b.el);
+      bubbles.delete(id);
+    }, 220);
+    return true;
+  }
+
+  function removeBubble(id){
+    const b = bubbles.get(id);
+    if(!b) return;
+    try{ if(b.el && b.el.parentNode) b.el.parentNode.removeChild(b.el); }catch(e){}
+    bubbles.delete(id);
+  }
+
+  function registerMiss(){
+    miss++;
+    missEl.textContent = miss;
+    combo = 0;
+    comboEl.textContent = combo;
+    playMiss();
+  }
+
+  // typed pop: check input against any bubble's word; pop first match (closest?)
+  function attemptPopByText(text){
+    if(!text) return false;
+    // exact match preferred
+    for(const [id, b] of bubbles.entries()){
+      if(b.word === text){
+        popBubble(id,false);
+        return true;
+      }
+    }
+    // no exact match -> partial or close: choose bubble that startsWith text (longest match)
+    let best = null;
+    for(const [id, b] of bubbles.entries()){
+      if(b.word.startsWith(text)){
+        if(!best || b.word.length < best.word.length) best = b; // choose shorter that matches start (easier)
+      }
+    }
+    if(best){
+      // partial match not counted as pop; user must finish typing; so do nothing
+      return false;
+    }
+    // no match at all -> penalize
+    miss++;
+    missEl.textContent = miss;
+    combo = 0;
+    comboEl.textContent = combo;
+    playMiss();
+    return false;
+  }
+
+  // timers
+  function startGame(){
+    if(running) return;
+    running = true;
+    paused = false;
+    timeLimit = parseInt(timeSelect.value,10);
+    timeLeft = timeLimit;
+    score = 0; miss = 0; combo = 0;
+    scoreEl.textContent = 0; missEl.textContent = 0; comboEl.textContent = 0;
+    typeInput.value = '';
+    // start spawning
+    const params = getParams();
+    spawnInterval = setInterval(()=> spawnBubble(), params.spawnRate);
+    // spawn a few immediately
+    for(let i=0;i<Math.min(6, params.maxBubbles);i++) spawnBubble();
+    // start game timer tick
+    gameTimer = setInterval(()=>{
+      if(!running || paused) return;
+      timeLeft--;
+      timeLeftEl.textContent = timeLeft + 's';
+      if(timeLeft <= 0){
+        endGame();
+      }
+    },1000);
+    // start animation loop
+    lastFrame = performance.now();
+    requestAnimationFrame(gameLoop);
+    startBtn.textContent = '再開中';
+  }
+
+  function pauseGame(){
+    if(!running) return;
+    paused = !paused;
+    pauseBtn.textContent = paused ? '再開' : '一時停止';
+  }
+
+  function endGame(){
+    running = false;
+    paused = false;
+    if(spawnInterval){ clearInterval(spawnInterval); spawnInterval = null; }
+    if(gameTimer){ clearInterval(gameTimer); gameTimer = null; }
+    // remove remaining bubbles
+    for(const id of Array.from(bubbles.keys())) removeBubble(id);
+    // save highscore
+    saveScore(score);
+    alert(`終了！スコア: ${score} / ミス: ${miss}`);
+    startBtn.textContent = 'スタート';
+  }
+
+  function resetGame(){
+    running = false;
+    paused = false;
+    if(spawnInterval){ clearInterval(spawnInterval); spawnInterval = null; }
+    if(gameTimer){ clearInterval(gameTimer); gameTimer = null; }
+    for(const id of Array.from(bubbles.keys())) removeBubble(id);
+    score = 0; miss = 0; combo = 0;
+    scoreEl.textContent = '0'; missEl.textContent='0'; comboEl.textContent='0';
+    timeLimit = parseInt(timeSelect.value,10);
+    timeLeft = timeLimit;
+    timeLeftEl.textContent = timeLeft + 's';
+    typeInput.value = '';
+    startBtn.textContent = 'スタート';
+  }
+
+  function saveScore(sc){
+    // history
+    const rec = {score:sc, miss, time: new Date().toISOString()};
+    history.unshift(rec);
+    history = history.slice(0, 20);
+    localStorage.setItem('pop_typing_history', JSON.stringify(history));
+    // highscore
+    if(sc > highscore){
+      highscore = sc;
+      localStorage.setItem('pop_typing_highscore', String(highscore));
+      highscoreDisplay.textContent = highscore;
+    }
+    refreshHistoryUI();
+  }
+
+  function refreshHistoryUI(){
+    scoreHistoryEl.innerHTML = '';
+    for(let i=0;i<Math.min(5, history.length); i++){
+      const h = history[i];
+      const li = document.createElement('li');
+      li.textContent = `${h.score}pt • ${new Date(h.time).toLocaleString()}`;
+      scoreHistoryEl.appendChild(li);
+    }
+  }
+
+  // input handlers
+  popBtn.addEventListener('click', ()=>{
+    const text = typeInput.value.trim();
+    if(!text) return;
+    const ok = attemptPopByText(text);
+    if(ok){
+      typeInput.value = '';
+    } else {
+      // leave or clear? We'll clear to encourage next try
+      typeInput.value = '';
+    }
+  });
+
+  typeInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      popBtn.click();
+    } else if(e.key === 'Escape'){
+      resetGame();
+    }
+  });
+
+  // global key for starting if focus elsewhere
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){
+      resetGame();
+    }
+    // start on first printable key when not running
+    if(!running && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){
+      startGame();
+      typeInput.focus();
+    }
+  });
+
+  // allow clicking empty play area to focus input
+  playArea.addEventListener('click', ()=> typeInput.focus());
+
+  // start/pause/reset btns
+  startBtn.addEventListener('click', ()=> {
+    if(!running) startGame();
+    else { paused = false; }
+    typeInput.focus();
+  });
+  pauseBtn.addEventListener('click', ()=> pauseGame());
+  resetBtn.addEventListener('click', ()=> resetGame());
+
+  // spawn frequency update when difficulty changes
+  diffSelect.addEventListener('change', ()=>{
+    if(spawnInterval) { clearInterval(spawnInterval); spawnInterval = null; }
+    if(running){
+      const params = getParams();
+      spawnInterval = setInterval(()=> spawnBubble(), params.spawnRate);
+    }
+  });
+
+  // resize: ensure bubbles within area on resize
+  window.addEventListener('resize', ()=> {
+    // no-op for now; newly spawned will adapt
+  });
+
+  // periodic auto-spawn using requestAnimationFrame to move
+  // but controlled by spawnInterval
+
+  // load initial UI
+  resetGame();
+  refreshHistoryUI();
+
+  // small accessibility: focus input immediately
+  setTimeout(()=> typeInput.focus(), 300);
+
+  // expose for debugging (optional)
+  window.__popTyping = {
+    startGame, resetGame, spawnBubble, bubbles
+  };
+})();
+</script>
+</body>
+</html>
